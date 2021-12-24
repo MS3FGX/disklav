@@ -29,6 +29,15 @@ psp_toc_len = 32
 psp_track_start = b'\xFE\x00\x00'
 psp_track_end = b'\xF2\x00\x00'
 
+# PianoSoft DOM-30
+dom_disknum_len = 15
+dom_title_len = 53
+dom_toc_offset = 57
+dom_toc_skip = 80
+dom_toc_len = 32
+dom_track_start = b'\xFE\x00\x00'
+dom_track_end = b'\x00\x0C\xF2'
+
 # Define functions
 #-----------------------------------------------------------------------#
 # Get ASCII data from file given start position and length
@@ -43,9 +52,17 @@ def diskType():
         print("Smart PianoSoft")
         diskformat = "SPS"
         return
-    if len(diskdata.find(b'PIANODIR')) != 0:
+
+    # Find ToC
+    toc_pos = diskdata.find(b'PIANODIR')[0]
+    if toc_pos == 57400:
         print("PianoSoft Plus")
         diskformat = "PSP"
+        return
+    if toc_pos == 30720:
+        print("PianoSoft DOM-30")
+        diskformat = "DOM"
+        locateTOC()
         return
 
     # If we get here, we don't know this disk type and give up
@@ -67,6 +84,12 @@ def diskTitle():
     if diskformat == "PSP":
         disk_title = getData(psp_title_pos, psp_title_len)
 
+    # For DOM-30, also print disk number
+    if diskformat == "DOM":
+        disk_title = getData((dom_disknum_pos + dom_disknum_len), dom_title_len)
+        disk_number = getData(dom_disknum_pos, dom_disknum_len)
+        print("Disk: %s" % disk_number.lstrip())
+
     # Print result
     print("Title: %s" % disk_title.lstrip())
 
@@ -85,6 +108,11 @@ def listTracks(numtracks):
         track_start = psp_toc_start
         track_skip = psp_toc_skip
         title_len = psp_toc_len
+        title_offset = 0
+    if diskformat == "DOM":
+        track_start = (dom_toc_start + dom_toc_offset)
+        track_skip = dom_toc_skip
+        title_len = dom_toc_len
         title_offset = 0
 
     for track in range(0, numtracks):
@@ -113,6 +141,9 @@ def locateTracks():
     if diskformat == "PSP":
         track_start = psp_track_start
         track_end = psp_track_end
+    if diskformat == "DOM":
+        track_start = dom_track_start
+        track_end = dom_track_end
 
     # Perform searches
     track_headers = diskdata.findall(track_start, bytealigned=True)
@@ -159,7 +190,7 @@ def ripTracks(numtracks):
     # Extension depends on format
     if diskformat == "SPS":
         extension = ".mid"
-    if diskformat == "PSP":
+    if diskformat == "PSP" or diskformat == "DOM":
         extension = ".fil"
 
     for track in range(0, numtracks):
@@ -188,6 +219,13 @@ def ripTracks(numtracks):
 
         # Move on to the next one
         print("")
+
+# For DOM-30, ToC info is at variable position towards end of disk
+def locateTOC():
+    global dom_toc_start
+    global dom_disknum_pos
+    dom_toc_start = int((diskdata.find(b'PIANODIR', start=diskdata.pos + 1)[0] / 8))
+    dom_disknum_pos = int((diskdata.find(b'PPC', start=diskdata.pos + 1)[0] / 8))
 
 # Execution below this line
 #-----------------------------------------------------------------------#
